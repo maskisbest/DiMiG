@@ -58,7 +58,7 @@ def build_transforms(model_name, config, model=None):
                     interpolation=transforms.InterpolationMode.BICUBIC,
                 ),
                 transforms.ToTensor(),
-                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # BLIP uses ImageNet stats
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             ]
         )
     if model_name in ["ALBEF", "TCL", "XVLM"]:
@@ -81,6 +81,7 @@ def build_transforms(model_name, config, model=None):
     )
 
 
+# Compute normalized text embeddings.
 def compute_text_embeds(model, tokenizer, texts, device, batch_size=256, max_length=30, dtype=None):
     use_dtype = dtype or (torch.float16 if device.type == "cuda" else torch.float32)
     out = []
@@ -96,6 +97,7 @@ def compute_text_embeds(model, tokenizer, texts, device, batch_size=256, max_len
     return torch.cat(out, dim=0)
 
 
+# Compute normalized image embeddings.
 def compute_image_embeds(model, loader, device, dtype=None):
     use_dtype = dtype or (torch.float16 if device.type == "cuda" else torch.float32)
     rows = []
@@ -120,9 +122,6 @@ def compute_image_embeds(model, loader, device, dtype=None):
 
 
 def _dir_cos(img_vec, txt_vec_a, txt_vec_b, eps=1e-6):
-    """
-    Directional cosine between (img->a) and (img->b).
-    """
     va = txt_vec_a - img_vec
     vb = txt_vec_b - img_vec
     va = va / (va.norm(dim=-1, keepdim=True).clamp(min=eps))
@@ -130,6 +129,7 @@ def _dir_cos(img_vec, txt_vec_a, txt_vec_b, eps=1e-6):
     return (va * vb).sum(dim=-1)
 
 
+# Select furthest/boundary/random text candidates per image.
 def select_candidates(image_embeds, text_embeds, img2txt, topk=64, seed=42, device=torch.device("cpu")):
     rng = random.Random(seed)
     num_imgs = image_embeds.size(0)
@@ -150,7 +150,7 @@ def select_candidates(image_embeds, text_embeds, img2txt, topk=64, seed=42, devi
             if banned:
                 furthest_sim[row, banned] = float("inf")
 
-        # 最远样本：与图像最不相似（排除配对）
+
         furthest_idx = torch.argmin(furthest_sim, dim=1)
 
         for row, img_id in enumerate(range(start, end)):
@@ -159,7 +159,7 @@ def select_candidates(image_embeds, text_embeds, img2txt, topk=64, seed=42, devi
             if not math.isfinite(furthest_sim[row, far_idx].item()) or far_idx in banned:
                 far_idx = rng.choice(list(all_txt_ids - banned))
 
-            # 计算 topk 最相近候选（排除配对），基于方向一致性筛边界样本
+
             boundary_sim = sim[row : row + 1].clone()
             if banned:
                 boundary_sim[0, list(banned)] = -float("inf")
@@ -168,7 +168,7 @@ def select_candidates(image_embeds, text_embeds, img2txt, topk=64, seed=42, devi
             boundary_choice = None
             img_vec = image_embeds[img_id].to(device)
             far_vec = text_embeds[far_idx].to(device)
-            cos_lower, cos_upper = 1e-3, math.cos(math.radians(15)) - 1e-6  # (0, ~0.97)
+            cos_lower, cos_upper = 1e-3, math.cos(math.radians(15)) - 1e-6
             for idx in top_idx[0].tolist():
                 if idx in banned:
                     continue
@@ -179,7 +179,7 @@ def select_candidates(image_embeds, text_embeds, img2txt, topk=64, seed=42, devi
                     break
             if boundary_choice is None:
                 boundary_dir_fallback += 1
-                # 回退到最相似的非配对
+
                 for idx in top_idx[0].tolist():
                     if idx not in banned:
                         boundary_choice = idx
@@ -215,8 +215,8 @@ def main():
     )
     parser.add_argument("--text_batch_size", default=256, type=int)
     parser.add_argument("--image_batch_size", default=64, type=int)
-    parser.add_argument("--num_workers", default=0, type=int, help="DataLoader workers; set 0 to avoid shm issues")
-    parser.add_argument("--pin_memory", action="store_true", help="Enable pin_memory for DataLoader")
+    parser.add_argument("--num_workers", default=0, type=int)
+    parser.add_argument("--pin_memory", action="store_true")
     parser.add_argument("--topk", default=64, type=int)
     parser.add_argument("--seed", default=42, type=int)
     parser.add_argument("--max_length", default=30, type=int)
@@ -226,7 +226,7 @@ def main():
     config = yaml.load(open(args.config, "r"), Loader=yaml.Loader)
     model_ckpt = os.path.join(args.checkpoint_root, args.source_model, f"{config['dataset']}.pth")
 
-    # 自动根据 source_model 设定默认输出目录
+
     if args.output is None:
         args.output = os.path.join("./output", args.source_model, config["dataset"], "badclip_candidates.jsonl")
 
@@ -258,6 +258,7 @@ def main():
         image_embeds, text_embeds, dataset.img2txt, topk=args.topk, seed=args.seed, device=device
     )
 
+    # Persist candidate mappings and auxiliary files.
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as f:
@@ -268,13 +269,13 @@ def main():
             item["random_text"] = dataset.text[item["random_text_id"]]
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-    # 辅助文件放在同一路径前缀下
+
     text_map_path = out_path.with_suffix(".texts.json")
     with text_map_path.open("w", encoding="utf-8") as f:
         json.dump({"texts": dataset.text}, f, ensure_ascii=False)
 
     sim_pos_path = out_path.with_suffix(".sim_pos_stats.jsonl")
-    # 如果后续需要保存相似度统计，可在此写入；暂占位空文件便于统一路径
+
     with sim_pos_path.open("w", encoding="utf-8") as f:
         pass
 
