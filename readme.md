@@ -1,10 +1,6 @@
-﻿# One Perturbation is Enough: On Generating Universal Adversarial Perturbations against Vision-Language Pre-training Models
+﻿## Overview
 
-[ICCV 2025] PyTorch implementation for "One Perturbation is Enough: On Generating Universal Adversarial Perturbations against Vision-Language Pre-training Models" ([arXiv](https://arxiv.org/abs/2406.05491)).
-
-## Overview
-
-This repo provides the training and evaluation code for universal **image** perturbations against VLP models on image-text retrieval.
+This repo provides the training and evaluation code for universal **image** perturbations against VLP models.
 
 ## Setup
 
@@ -19,6 +15,7 @@ pip install torch torchvision transformers ruamel.yaml pillow tqdm pandas
 ### Prepare datasets
 
 Download the datasets and set `image_root` in the config files:
+
 - [Flickr30K](https://shannon.cs.illinois.edu/DenotationGraph/)
 - [MSCOCO](https://cocodataset.org/#home)
 
@@ -27,12 +24,14 @@ The annotation JSONs are already provided in `data_annotation/`.
 ### Prepare checkpoints
 
 Download finetuned checkpoints and place them under `checkpoint/<MODEL>/<dataset>.pth`:
+
 - [ALBEF](https://github.com/salesforce/ALBEF)
 - [TCL](https://github.com/uta-smile/TCL)
 - [BLIP](https://github.com/salesforce/BLIP)
 - [X-VLM](https://github.com/zengyan-97/X-VLM)
 
 For CLIP models (ViT-B/16, RN101), weights are downloaded automatically via the cache in `hf_cache/`:
+
 - [CLIP](https://huggingface.co/openai/clip-vit-base-patch16)
 
 ## Reproduce the paper
@@ -64,15 +63,4 @@ python eval.py \
   --config configs/Retrieval_flickr_test.yaml \
   --source_model ALBEF \
   --load_dir ./output
-```
-
-## Citation
-
-```bibtex
-@article{fang2024one,
-  title={One Perturbation is Enough: On Generating Universal Adversarial Perturbations against Vision-Language Pre-training Models},
-  author={Fang, Hao and Kong, Jiawei and Yu, Wenbo and Chen, Bin and Li, Jiawei and Xia, Shutao and Xu, Ke},
-  journal={arXiv preprint arXiv:2406.05491},
-  year={2024}
-}
 ```
